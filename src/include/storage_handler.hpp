@@ -1,0 +1,26 @@
+#pragma once
+
+extern const std::string base_path;
+extern const std::string base_path_external;
+extern const std::string base_path_external_prog;
+extern const std::string base_music_path;
+extern const std::string base_music_path_songs;
+extern const std::string base_music_path_playlists;
+extern const std::string path_counter_prefix;
+
+bool ensure_storage();
+void remove_playlist(std::string playlist);
+void remove_song(int id);
+size_t get_next_available_song_id();
+bool exists_playlist(std::string playlist_name);
+bool exists_song(int id);
+std::string create_new_playlist(int song_id);
+std::string rename_playlist(std::string old_playlist, std::string new_playlist);
+void add_to_playlist(std::string playlist, int song_id);
+void remove_from_playlist(std::string playlist, int song_id);
+std::string construct_song_path(int id);
+std::string get_song_title(int id);
+std::string get_song_artist(int id);
+std::vector<std::string> get_all_playlists();
+std::vector<int> get_playlist(const std::string& name);
+std::vector<int> search_all_songs(const std::string& query);

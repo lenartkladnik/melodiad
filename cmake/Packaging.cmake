@@ -1,0 +1,16 @@
+add_custom_command(TARGET ${PROJECT_DISPLAY_NAME} POST_BUILD
+  COMMAND ${CMAKE_COMMAND}
+          -DPROJECT_NAME=${PROJECT_DISPLAY_NAME}
+          -DPLATFORM=${PLATFORM_NAME}
+          -DVERSION=${APP_VERSION}
+          -DARCHIVE_DIST=${ARCHIVE_DIST}
+          -DCOPY_BIN=${COPY_BIN}
+          -DIS_DEBUG=$<CONFIG:Debug>
+          -DBIN_PATH=$<TARGET_FILE:${PROJECT_DISPLAY_NAME}>
+          -DSOURCE_DIR=${CMAKE_SOURCE_DIR}
+          -DOUT_DIR=${OUT_DIR}
+          -DTEMP_DIST_DIR=${TEMP_DIST_DIR}
+          -P ${CMAKE_SOURCE_DIR}/cmake/CreateDist.cmake
+  COMMENT "Staging distribution for ${PLATFORM_NAME}"
+  VERBATIM
+)
