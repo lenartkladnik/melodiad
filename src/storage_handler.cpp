@@ -100,7 +100,7 @@ std::string rename_playlist(std::string old_playlist, std::string new_playlist) 
     return new_playlist; // Already correct name
 
   if (!is_string_valid_name(new_playlist)) {
-    std::println("[WARN] Failed to rename playlist: Playlist name ('{}') contains invalid characters.", new_playlist);
+    log("Failed to rename playlist: Playlist name ('" + new_playlist + "') contains invalid characters.", WARN);
     return old_playlist;
   }
 
@@ -194,8 +194,6 @@ std::vector<int> get_playlist(const std::string& name) {
     if (std::find(ids.begin(), ids.end(), id) == ids.end())
       ids.push_back(id);
   }
-
-  std::shuffle(ids.begin(), ids.end(), rand_generator);
 
   return ids;
 }

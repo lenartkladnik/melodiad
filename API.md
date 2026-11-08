@@ -2,6 +2,15 @@
 
 Melodiad is a local music server backend for [Melodia](https://github.com/lenartkladnik/Melodia-desktop) with an API built on top of [httplib](https://github.com/yhirose/cpp-httplib) that supports searching, downloading (via `yt-dlp`), and managing songs and playlists. The server listens on **`0.0.0.0:5400`** by default.
 
+## Command Line Options
+
+|Option|Description|
+|-|-|
+|`-h`, `--help`|Show the help screen.|
+|`-v`, `--version`|Print the version.|
+|`-P`, `--port`|Port the API listens on (default `5400`).|
+|`-H`, `--host`|Host the API listens on (default `0.0.0.0`).|
+
 ## Base URL
 
 ```text
@@ -28,7 +37,7 @@ Status check.
 
 ### `GET /search`
 
-Search trough downloaded songs.
+Search through downloaded songs.
 
 **Query Parameters**
 
@@ -48,11 +57,11 @@ Search trough downloaded songs.
   ]
   ```
 
-- `400 Bad Request` - missing or bad `query` parameter.
+- `400 Bad Request` - missing `query` parameter.
 
 ---
 
-### `GET /get-song`
+### `GET /song`
 
 Fetch metadata for a song.
 
@@ -68,18 +77,54 @@ Fetch metadata for a song.
 
   ```json
   {
-    "artist": "Queen",
     "title": "Bohemian Rhapsody",
+    "artist": "Queen",
+    "base": "/data/songs/0",
+    "audio": "/data/songs/0.mp3",
     "image": "/data/songs/0.png",
     "thumbnail": "/data/songs/0.small.png"
   }
   ```
 
-- `400 Bad Request` - missing or bad `song_id`.
+- `400 Bad Request` - missing `song_id` or `song_id` is not an integer.
 
 ---
 
-### `GET /get-playlist`
+### `GET /song/stream`
+
+Stream the audio of a song.
+
+**Query Parameters**
+
+|Name|Type|Required|Description|
+|-|-|-|-|
+|`song_id`|integer|Yes|ID of the song.|
+
+**Responses**
+
+- `200 OK` - `audio/mpeg` file content.
+- `400 Bad Request` - missing `song_id` or `song_id` is not an integer.
+
+---
+
+### `GET /song/delete`
+
+Delete a song by ID.
+
+**Query Parameters**
+
+|Name|Type|Required|Description|
+|-|-|-|-|
+|`song_id`|integer|Yes|ID of the song to delete.|
+
+**Responses**
+
+- `200 OK` - `Ok`
+- `400 Bad Request` - missing `song_id` or `song_id` is not an integer.
+
+---
+
+### `GET /playlist`
 
 Fetch metadata for a playlist.
 
@@ -96,6 +141,29 @@ Fetch metadata for a playlist.
   ```json
   {
     "image": "/data/playlists/My%20music.png",
+  }
+  ```
+
+- `400 Bad Request` - missing `playlist_name` or the playlist doesn't exist.
+
+---
+
+### `GET /playlist/items`
+
+Fetch items for a playlist.
+
+**Query Parameters**
+
+|Name|Type|Required|Description|
+|-|-|-|-|
+|`playlist_name`|string|Yes|Name of the playlist.|
+
+**Responses**
+
+- `200 OK` - `application/json`:
+
+  ```json
+  {
     "songs": [
         2,
         1
@@ -103,11 +171,40 @@ Fetch metadata for a playlist.
   }
   ```
 
-- `400 Bad Request` - missing or bad `playlist_name`.
+- `400 Bad Request` - missing `playlist_name` or the playlist doesn't exist.
 
 ---
 
-### `GET /get-all-playlists`
+### `GET /playlist/next`
+
+Get the song at a given index of a playlist. The index wraps around (`index % playlist length`), so it can be incremented indefinitely. Optionally the playlist can be shuffled deterministically using a seed, so the same `seed` always yields the same order.
+
+**Query Parameters**
+
+|Name|Type|Required|Description|
+|-|-|-|-|
+|`playlist_name`|string|Yes|Name of the playlist.|
+|`index`|integer|Yes|Non-negative position in the playlist.|
+|`shuffle`|string|No|Shuffles the playlist when set to `true`. If this parameter is present, `seed` is required.|
+|`seed`|integer|With `shuffle`|Seed for the shuffle.|
+
+**Responses**
+
+- `200 OK` - `application/json`:
+
+  ```json
+  {
+    "song_id": 3
+  }
+  ```
+
+  If the playlist is empty, `{}` is returned.
+
+- `400 Bad Request` - missing `playlist_name` or `index`, `index` is not an integer or is negative, or `shuffle` is given without a valid integer `seed`.
+
+---
+
+### `GET /playlists`
 
 List all playlists.
 
@@ -124,53 +221,7 @@ List all playlists.
 
 ---
 
-### `Web Socket /download`
-
-Start to download a song matching a search query.
-
-**Query Parameters**
-
-|Name|Type|Required|Description|
-|-|-|-|-|
-|`query`|string|Yes|Search term to download.|
-
-**Responses**
-
-```json
-{
-  "completed": int,
-  "total": int,
-  "good": bool,
-  "message": string
-}
-```
-
-**Note:** For downloading a list of songs use [/download-list](#web-socket-download-list) since it downloads using many threads
-
----
-
-### `Web Socket /download-list`
-
-Download a list of songs.
-
-**Query Parameters**
-
-|Name|Type|Required|Description|
-|-|-|-|-|
-|`list`|json array|Yes|List of search terms to download.|
-
-**Responses**
-
-```json
-{
-  "completed": int,
-  "total": int
-}
-```
-
----
-
-### `GET /create-playlist`
+### `GET /playlist/new`
 
 Create a new playlist with a song.
 
@@ -183,11 +234,11 @@ Create a new playlist with a song.
 **Responses**
 
 - `200 OK` - new playlist name
-- `400 Bad Request` - missing or bad `song_id`
+- `400 Bad Request` - missing `song_id` or `song_id` is not an integer.
 
 ---
 
-### `GET /rename-playlist`
+### `GET /playlist/rename`
 
 Rename an existing playlist.
 
@@ -201,11 +252,11 @@ Rename an existing playlist.
 **Responses**
 
 - `200 OK` - new playlist name
-- `400 Bad Request` - missing or bad parameter(s).
+- `400 Bad Request` - missing parameter(s).
 
 ---
 
-### `GET /playlist-add-item`
+### `GET /playlist/add`
 
 Add a song to a playlist.
 
@@ -218,12 +269,12 @@ Add a song to a playlist.
 
 **Responses**
 
-- `200 OK` - `Ok.`
-- `400 Bad Request` - missing or bad parameter(s).
+- `200 OK` - `Ok`
+- `400 Bad Request` - missing parameter(s) or `song_id` is not an integer.
 
 ---
 
-### `GET /playlist-remove-item`
+### `GET /playlist/remove`
 
 Remove a song from a playlist.
 
@@ -236,29 +287,12 @@ Remove a song from a playlist.
 
 **Responses**
 
-- `200 OK` - `Ok.`
-- `400 Bad Request` - missing or bad parameter(s).
+- `200 OK` - `Ok`
+- `400 Bad Request` - missing parameter(s) or `song_id` is not an integer.
 
 ---
 
-### `GET /delete-song`
-
-Delete a song by ID.
-
-**Query Parameters**
-
-|Name|Type|Required|Description|
-|-|-|-|-|
-|`song_id`|integer|Yes|ID of the song to delete.|
-
-**Responses**
-
-- `200 OK` - `Ok.`
-- `400 Bad Request` - missing or bad `song_id`.
-
----
-
-### `GET /delete-playlist`
+### `GET /playlist/delete`
 
 Delete a playlist by name.
 
@@ -270,15 +304,40 @@ Delete a playlist by name.
 
 **Responses**
 
-- `200 OK` - `Ok.`
-- `400 Bad Request` - missing or bad `playlist_name`.
+- `200 OK` - `Ok`
+- `400 Bad Request` - missing `playlist_name`.
 
 ---
 
-### `GET /fast-autocomplete`
+### `Web Socket /download`
+
+Download song(s).
+
+**Send**
+
+Each text message sent to this web socket is used as a search query and a download is started for it. Song ids are assigned sequentially, starting at the next available id. Downloads run concurrently (up to a fixed maximum; additional requests wait for a free slot). Send an **empty message** to signal that there are no more songs.
+
+**Receive**
+
+For each song that finishes downloading the following is sent back to the client:
+
+```json
+{
+  "id": int,
+  "success": bool
+}
+```
+
+Once the empty message has been received and all downloads have finished, the server closes the connection.
+
+---
+
+### `GET /autocomplete/fast`
 
 Get autocomplete suggestions from yt-dlp (generally lower accuracy).
 
+Only the most recent autocomplete request (fast or slow) is served; older in-flight requests are abandoned.
+
 **Query Parameters**
 
 |Name|Type|Required|Description|
@@ -301,13 +360,17 @@ Get autocomplete suggestions from yt-dlp (generally lower accuracy).
   ```
 
 - `400 Bad Request` - missing `query`.
+- `409 Conflict` - the request was superseded by a newer autocomplete request.
+- `500 Internal Server Error` - autocomplete failed.
 
 ---
 
-### `GET /slow-autocomplete`
+### `GET /autocomplete/slow`
 
 Get autocomplete suggestions from yt music (generally higher accuracy).
 
+Only the most recent autocomplete request (fast or slow) is served; older in-flight requests are abandoned.
+
 **Query Parameters**
 
 |Name|Type|Required|Description|
@@ -330,18 +393,20 @@ Get autocomplete suggestions from yt music (generally higher accuracy).
   ```
 
 - `400 Bad Request` - missing `query`.
+- `409 Conflict` - the request was superseded by a newer autocomplete request.
+- `500 Internal Server Error` - autocomplete failed.
 
 ---
 
-### `GET /update-yt-dlp`
+### `GET /update`
 
 Update yt-dlp.
 
-**Response**
+**Responses**
 
-- `200 OK` - `Ok.`
+- `200 OK` - `Ok`
 - `500 Internal Server Error`
-  - `YtDlp doesn't exist on the system.`
-  - `YtDlp update command failed ('yt_dlp_path -U').`
+  - Empty body - yt-dlp doesn't exist on the system.
+  - `Failed` - the update command (`<yt_dlp_path> -U`) failed.
 
 ---

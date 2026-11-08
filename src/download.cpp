@@ -26,7 +26,7 @@
 using json = nlohmann::json;
 
 void set_download_status(const std::string& s) {
-  std::println("[INFO] {}", s);
+  log(s);
 
   download_status = "{ \
     \"completed\": " + std::to_string(_download_progress_step) + ", \
@@ -75,12 +75,12 @@ AutocompleteResult get_search_autocomplete_yt_music(const std::string& query) {
   try {
     res = cli.Post(path, headers, body.dump(), "application/json");
   } catch (...) {
-    std::println("[ERROR] Failed to perform a POST request for autocomplete.");
+    log("Failed to perform a POST request for autocomplete.", ERROR);
     return AutocompleteResult(query, {}, {}); // Failed to get results fast enough or something went wrong in the request, return no suggestions
   }
 
   if (!res || res->status != 200) {
-    std::println("[ERROR] Failed to fetch valid response for autocomplete ({}).", (res ? ("status code is " + std::to_string(res->status)) : "no response was given"));
+    log("Failed to fetch valid response for autocomplete (" + (res ? ("status code is " + std::to_string(res->status)) : "no response was given") + ").", ERROR);
     if (res)
       std::println("        Error body is:\n{}", res->body);
 
@@ -118,7 +118,7 @@ AutocompleteResult get_search_autocomplete_ytdlp(const std::string& query) {
   }
 
   if (yt_dlp_path.empty()) {
-    std::println("[ERROR] Can't get search autocompletion results with yt-dlp since it doesn't exist on the system.");
+    log("Can't get search autocompletion results with YtDlp since it doesn't exist on the system.", ERROR);
     return AutocompleteResult(query, {}, {});
   }
 
@@ -215,87 +215,75 @@ inline std::string get_yt_dlp_downloaded_path() {
 #endif
 }
 
-bool _yt_dlp_download_song_from_query(const std::string& dlp_path, const std::string& query, int new_id) {
-  auto new_base = base_music_path_songs + std::to_string(new_id);
-  auto yt_dlp_args = " -I 1 \"https://music.youtube.com/search?q=" + url_encode(query) + "\" -xciw -f \"bestaudio/best\" --audio-format mp3 --audio-quality 0 --no-playlist -o \"" + new_base + "\".mp3";
-
-  auto command = dlp_path + yt_dlp_args;
-
-  std::println("[INFO] Calling system with '{}'", command);
-
-  return system(command.c_str()) == 0;
-}
-
 bool _resize_cover_art(const std::string& temp_file_path, const std::string& output, int target_w, int target_h) {
   set_download_status("Resizing cover art");
-
+ 
   if (!resize_image(temp_file_path, output, {(unsigned)target_w, (unsigned)target_h})) {
     return false;
   }
+ 
+  log("Resized cover art image and saved to '" + output + "'");
+ 
+  return true;
+}
 
-  std::println("[INFO] Resized cover art image and saved to '{}'", output);
+bool _yt_dlp_download_all(const std::string& query, int new_id) {
+  const std::string base  = base_music_path_songs + std::to_string(new_id);
+  const std::string thumb = base + ".cover_art.png.tmp";
+
+  const std::string command = yt_dlp_path +
+    " -I 1 \"https://music.youtube.com/search?q=" + url_encode(query) + "\""
+    " --no-playlist -xciw -f \"bestaudio/best\" --audio-format mp3 --audio-quality 0"
+    // Audio file
+    " -o \"" + base + ".mp3\""
+    // Cover art
+    " --write-thumbnail --convert-thumbnails png"
+    " --ppa \"ThumbnailsConvertor+FFmpeg_o:-vf crop=ih:ih\""
+    " -o \"thumbnail:" + thumb + ".%(ext)s\""
+    " -o \"pl_thumbnail:\""
+    // Metadata
+    " --print-to-file \"%(track,title)s\" \"" + base + ".title\""
+    " --print-to-file \"%(artist,uploader)s\" \"" + base + ".artist\"";
+
+  log("Calling system with '" + command + "'");
+
+  if (system(command.c_str()) != 0) return false;
+
+  if (!std::filesystem::exists(thumb + ".png")) return false;
+  std::filesystem::rename(thumb + ".png", thumb);
 
   return true;
 }
 
-bool _download_raw_cover_art_yt_dlp(const std::string& title_string, const std::string& artist_string, const std::string& path) {
-  auto yt_dlp_args = " -I 1 \"https://music.youtube.com/search?q=" + url_encode(title_string + " by " + artist_string) + "\""
-    " --skip-download --write-thumbnail"
-    " --convert-thumbnails png"
-    " --ppa \"ThumbnailsConvertor+FFmpeg_o:-vf crop=ih:ih\""
-    " --no-playlist -cw"
-    " -o \"thumbnail:" + path + ".%(ext)s\""
-    " -o \"pl_thumbnail:\"";
+bool _postprocess_all(int new_id) {
+  set_download_status("Resizing cover art");
 
-  auto command = yt_dlp_path + yt_dlp_args;
+  const std::string base = base_music_path_songs + std::to_string(new_id);
+  const std::string thumb = base + ".cover_art.png.tmp";
 
-  std::println("[INFO] Calling system with '{}'", command);
+  if (!_resize_cover_art(thumb, base + ".png", 1000, 1000)) return false;
+  if (!_resize_cover_art(thumb, base + ".small.png", 100, 100)) return false;
 
-  auto r = system(command.c_str()) == 0;
-
-  if (std::filesystem::exists(path + ".png"))
-    std::filesystem::rename(path + ".png", path);
-  else
-    return false;
-
-  return r;
-}
-
-bool _download_cover_art(const std::string& title_string, const std::string& artist_string, int new_id) {
-  set_download_status("Downloading cover art");
-
-  std::string new_base = base_music_path_songs + std::to_string(new_id);
-  std::string temp_file_path = new_base + ".cover_art.png.tmp";
-
-  if (!_download_raw_cover_art_yt_dlp(title_string, artist_string, temp_file_path)) return false;
-
-  if (!_resize_cover_art(temp_file_path, new_base + ".png", 1000, 1000)) return false;
-  if (!_resize_cover_art(temp_file_path, new_base + ".small.png", 100, 100)) return false;
-
-  std::remove(temp_file_path.c_str());
-
-  std::println("[INFO] Removed temporary file {}", temp_file_path);
-
+  std::remove(thumb.c_str());
+  log("Removed temporary file " + thumb);
   return true;
 }
 
 bool _download_song_from_query(const std::string& query, size_t new_id) {
   download_lock = true;
 
-  std::println("[INFO] Attempting to download song from query '{}'", query);
+  log("Attempting to download song from query '" + query + "'");
 
-  set_download_status("Downloading song file and metadata");
-  if (!_yt_dlp_download_song_from_query(yt_dlp_path, query, new_id)) return false;
-  std::println("[INFO] Downloaded song file and metadata for query '{}'", query);
+  set_download_status("Downloading song file, metadata and cover art");
+  if (!_yt_dlp_download_all(query, new_id)) return false;
+  if (!_postprocess_all(new_id)) return false;
 
-  if (!_download_cover_art(get_song_title(new_id), get_song_artist(new_id), new_id)) return false;
-  std::println("[INFO] Downloaded song cover art for id '{}'.", new_id);
-
+  log("Downloaded song for query '" + query + "'");
   return true;
 }
 
 std::string find_yt_dlp() {
-  std::println("Checking if yt-dlp exists on the system");
+  log("Checking if YtDlp exists on the system");
 
   std::string yt_dlp_path = "yt-dlp";
   if (!std::filesystem::exists(get_yt_dlp_downloaded_path()) &&
@@ -306,63 +294,21 @@ std::string find_yt_dlp() {
       "/dev/null 2>&1"
     #endif
     ) == 0) {
-    std::println("[INFO] yt-dlp was not found on the system and will be downloaded");
+    log("YtDlp was not found on the system and will be downloaded");
 
     yt_dlp_path = get_yt_dlp_downloaded_path();
     if (!_download_file(get_yt_dlp_download_url(), yt_dlp_path)) {
-      throw std::runtime_error("Failed to download the yt-dlp binary form '" + yt_dlp_path + "'. Consider installing yt-dlp yourself systemwide");
+      throw std::runtime_error("Failed to download the YtDlp binary form '" + yt_dlp_path + "'. Consider installing YtDlp yourself systemwide");
     }
     #ifndef _WIN32
     // On POSIX like systems also chmod +x the file
     system(("chmod +x " + yt_dlp_path).c_str());
     #endif
   } else {
-    std::println("[INFO] yt-dlp was found on the system");
+    log("YtDlp was found on the system");
   }
 
   return yt_dlp_path;
-}
-
-void _download_from_mf(std::string input_string, std::atomic<bool>& success, std::string& query, int new_id) {
-  // Start the song audio download immediately (since yt-dlp performs the same search as the autocomplete suggestion)
-  std::thread download_song_thread([&](){
-    auto r = _yt_dlp_download_song_from_query(
-      yt_dlp_path,
-      input_string,
-      new_id
-    );
-
-    if (!r) success = false;
-  });
-
-  MultistateFuture<AutocompleteResult> mf;
-  mf.launch([input_string](){return get_search_autocomplete_ytdlp(input_string);}, 1);
-
-  // Wait for the get_search_autocomplete_yt_music to complete so the cover art download can start
-  mf.wait();
-  auto result = mf.get();
-  if (!result || result.value().pairs.size() == 0) {
-    return; // Don't download if there is no result
-  }
-  auto title_artist_pair = result.value().pairs[0];
-
-  std::ofstream title_f(base_music_path_songs + std::to_string(new_id) + ".title");
-  title_f << title_artist_pair.first;
-  title_f.close();
-  std::ofstream artist_f(base_music_path_songs + std::to_string(new_id) + ".artist");
-  artist_f << title_artist_pair.second;
-  artist_f.close();
-
-  query = title_artist_pair.first + " by " + title_artist_pair.second;
-
-  std::thread download_details_thread([&](){
-    auto r = _download_cover_art(title_artist_pair.first, title_artist_pair.second, new_id);
-
-    if (!r) success = false;
-  });
-
-  download_song_thread.join();
-  download_details_thread.join();
 }
 
 bool download_from_search(const std::string& query, int new_id, size_t attempt_count, bool bypass_lock, bool blocking) {
@@ -378,7 +324,7 @@ bool download_from_search(const std::string& query, int new_id, size_t attempt_c
   }
 
   if (!bypass_lock && download_lock) {
-    std::println("[INFO] Download lock is active, will not download");
+    log("Download lock is active, will not download");
     reset_download_status();
     download_status = "{ \
       \"completed\": 0, \
@@ -395,7 +341,7 @@ bool download_from_search(const std::string& query, int new_id, size_t attempt_c
     yt_dlp_path = find_yt_dlp();
 
     if (yt_dlp_path.empty()) {
-      std::println("[ERROR] Can't download since yt-dlp doesn't exist on the system");
+      log("Can't download since YtDlp doesn't exist on the system", ERROR);
       reset_download_status();
       download_status = "{ \
         \"completed\": 0, \
@@ -407,17 +353,16 @@ bool download_from_search(const std::string& query, int new_id, size_t attempt_c
     }
   }
 
-  set_download_status("Getting song name and title");
+  set_download_status("Getting song name and title for query '" + query + "'");
 
   std::thread download_thread([=](){
-    std::atomic<bool> success = true;
-    std::string s_query;
+    bool success;
     int song_id = new_id == -1 ? get_next_available_song_id() : new_id;
 
-    _download_from_mf(query, success, s_query, song_id);
+    success = _download_song_from_query(query, song_id);
 
     if (!success) {
-      std::println("[ERROR] Failed to download '{}'", query);
+      log("Failed to download '" + query + "'", ERROR);
       remove_song(song_id);
       download_status = "{ \
         \"completed\": 0, \

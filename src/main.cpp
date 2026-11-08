@@ -4,9 +4,14 @@
 #include <atomic>
 #include <future>
 #include <cmath>
+#include <ctime>
+#include <chrono>
+#include <algorithm>
+#include <random>
 
 #include "include/download.hpp"
 #include "include/storage_handler.hpp"
+#include "include/utils.hpp"
 
 // Disable warnings produced by external libs
 #pragma GCC diagnostic push
@@ -18,7 +23,7 @@
 
 #pragma GCC diagnostic pop // Enable all warnings
 
-#define VERSION "2.2.1-dev"
+#define VERSION "1.0.0"
 
 void help() {
   std::println("melodiad (v{}) - Melodia music player backend", VERSION);
@@ -62,7 +67,7 @@ int main(int argc, char *argv[]) {
 
         i++;
       } else {
-        std::println("[ERROR] Missing value for argument host.");
+        log("Missing value for argument host.", ERROR);
         return 1;
       }
     }
@@ -71,25 +76,25 @@ int main(int argc, char *argv[]) {
       if (i + 1 < argc) {
         try {
           port = std::stoi(argv[i + 1]);
-        } catch (std::invalid_argument&) {
-          std::println("[ERROR] Argument port must be an integer.");
+        } catch (std::exception&) {
+          log("Argument port must be an integer.", ERROR);
           return 1;
         }
 
         i++;
       } else {
-        std::println("[ERROR] Missing value for argument port.");
+        log("Missing value for argument port.", ERROR);
         return 1;
       }
     }
 
     else {
-      std::println("[ERROR] Unknown argument '{}', try --help to see the list of arguments.", argv[i]);
+      log("Unknown argument '" + std::string(argv[i]) + "', try --help to see the list of arguments.", ERROR);
       return 1;
     }
   }
 
-  std::println("[INFO] Setting up environment...");
+  log("Setting up environment...");
 
   if (!ensure_storage())
     return 1;
@@ -97,18 +102,23 @@ int main(int argc, char *argv[]) {
   yt_dlp_path = find_yt_dlp(); // find yt-dlp on PATH and download if isn't found
 
   httplib::Server server;
+  server.new_task_queue = []{return new httplib::ThreadPool(32);};
 
   server.set_mount_point("/data", base_music_path);
 
-  server.Get("/", [](const httplib::Request&, httplib::Response& res) {
+  server.Get("/", [](const httplib::Request& req, httplib::Response& res) {
+    log_request(req);
     res.set_content("Server running Melodia", "text/plain");
   });
 
   // Get search results
   server.Get("/search", [](const httplib::Request& req, httplib::Response& res){
+    log_request(req);
+    // default output
+    res.set_content("{}", "application/json");
+
     if (!req.has_param("query")) {
       res.status = 400;
-      res.set_content("Bad request", "text/plain");
       return;
     }
 
@@ -120,10 +130,13 @@ int main(int argc, char *argv[]) {
   });
 
   // Get song
-  server.Get("/get-song", [](const httplib::Request& req, httplib::Response& res) {
+  server.Get("/song", [](const httplib::Request& req, httplib::Response& res) {
+    log_request(req);
+    // default output
+    res.set_content("{}", "application/json");
+
     if (!req.has_param("song_id")) {
       res.status = 400;
-      res.set_content("Bad request", "text/plain");
       return;
     }
 
@@ -132,9 +145,14 @@ int main(int argc, char *argv[]) {
     int int_song_id;
     try {
         int_song_id = std::stoi(song_id);
-    } catch (const std::invalid_argument&) {
+    } catch (const std::exception&) {
       res.status = 400;
-      res.set_content("Bad request", "text/plain");
+      log("song_id is not an integer.", ERROR);
+      return;
+    }
+
+    if (!exists_song(int_song_id)) {
+      res.status = 404;
       return;
     }
 
@@ -149,11 +167,39 @@ int main(int argc, char *argv[]) {
     res.set_content(json_response.dump(), "application/json");
   });
 
+  // Get song audio
+  server.Get("/song/stream", [](const httplib::Request& req, httplib::Response& res) {
+    log_request(req);
+    // default output
+    res.set_content("", "audio/mpeg");
+
+    if (!req.has_param("song_id")) {
+      res.status = 400;
+      return;
+    }
+
+    auto song_id = req.get_param_value("song_id");
+
+    int int_song_id;
+    try {
+        int_song_id = std::stoi(song_id);
+    } catch (const std::exception&) {
+      res.status = 400;
+      log("song_id is not a valid integer.", ERROR);
+      return;
+    }
+
+    res.set_file_content(construct_song_path(int_song_id) + ".mp3", "audio/mpeg");
+  });
+
   // Get playlist
-  server.Get("/get-playlist", [](const httplib::Request& req, httplib::Response& res) {
+  server.Get("/playlist", [](const httplib::Request& req, httplib::Response& res) {
+    log_request(req);
+    // default output
+    res.set_content("{}", "application/json");
+
     if (!req.has_param("playlist_name")) {
       res.status = 400;
-      res.set_content("Bad request", "text/plain");
       return;
     }
 
@@ -161,80 +207,109 @@ int main(int argc, char *argv[]) {
 
     if (!exists_playlist(playlist_name)) {
       res.status = 400;
-      res.set_content("Bad request", "text/plain");
+      log("Requested playlist doesn't exist.", ERROR);
       return;
     }
 
     nlohmann::json json_response;
-    json_response["songs"] = get_playlist(playlist_name);
     json_response["image"] = "/data/playlists/" + url_encode(playlist_name) + ".png";
 
     res.set_content(json_response.dump(), "application/json");
   });
 
+  // Get playlist items
+  server.Get("/playlist/items", [](const httplib::Request& req, httplib::Response& res) {
+    log_request(req);
+    res.set_content("{}", "application/json");
+
+    if (!req.has_param("playlist_name")) {
+      res.status = 400;
+      return;
+    }
+
+    auto playlist_name = req.get_param_value("playlist_name");
+
+    if (!exists_playlist(playlist_name)) {
+      res.status = 400;
+      log("Requested items for a playlist that doesn't exist.", ERROR);
+      return;
+    }
+
+    nlohmann::json json_response;
+    json_response["songs"] = get_playlist(playlist_name);
+
+    res.set_content(json_response.dump(), "application/json");
+  });
+
+  // Get song for index in playlist
+  server.Get("/playlist/next", [](const httplib::Request& req, httplib::Response& res) {
+    log_request(req);
+    res.set_content("{}", "application/json");
+
+    if (!(req.has_param("playlist_name") && req.has_param("index"))) {
+      res.status = 400;
+      return;
+    }
+
+    bool shuffle = false;
+    int seed;
+    if (req.has_param("shuffle")) {
+      if (!req.has_param("seed")) {
+        res.status = 400;
+        return;
+      }
+      try {
+        seed = std::stoi(req.get_param_value("seed"));
+      } catch (const std::exception&) {
+        res.status = 400;
+        return;
+      }
+      shuffle = req.get_param_value("shuffle") == "true";
+    }
+    auto playlist_name = req.get_param_value("playlist_name");
+    int index;
+    try {
+      index = std::stoi(req.get_param_value("index"));
+    } catch (const std::exception&) {
+      res.status = 400;
+      return;
+    }
+
+    if (index < 0) {
+      res.status = 400;
+      return;
+    }
+
+    auto songs = get_playlist(playlist_name);
+
+    if (songs.size() == 0) {
+      return;
+    }
+
+    if (shuffle) {
+      std::mt19937 rng(seed);
+      std::shuffle(songs.begin(), songs.end(), rng);
+    }
+
+    int next_song = songs[index % songs.size()];
+
+    nlohmann::json json_response;
+    json_response["song_id"] = next_song;
+
+    res.set_content(json_response.dump(), "application/json");
+  });
+
   // Get all playlists
-  server.Get("/get-all-playlists", [](const httplib::Request&, httplib::Response& res) {
+  server.Get("/playlists", [](const httplib::Request& req, httplib::Response& res) {
+    log_request(req);
     nlohmann::json json_response = get_all_playlists();
 
     res.set_content(json_response.dump(), "application/json");
   });
 
-  // Download song
-  server.WebSocket("/download", [](const httplib::Request& req, httplib::ws::WebSocket& ws){
-    if (!req.has_param("query")) {
-      ws.close(httplib::ws::CloseStatus::InvalidPayload, "Bad request");
-      return;
-    }
-
-    auto query = req.get_param_value("query");
-
-    bool has_started = download_from_search(query);
-
-    if (!has_started) {
-      ws.close(httplib::ws::CloseStatus::NoStatus, download_status);
-      return;
-    }
-
-    // Send status updates while a download is ongoing
-    std::string last_status;
-    while (download_lock) {
-      if (last_status != download_status)
-        ws.send(download_status);
-
-      last_status = download_status;
-
-      std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    }
-
-    // One last check
-    if (last_status != download_status)
-      ws.send(download_status);
-
-    download_status = ""; // Clear download_status here since reset_download_status
-                          // can't because this websocket might still use it
-
-    ws.close();
-  });
-
-  // Download a list of songs
-  server.WebSocket("/download-list", [](const httplib::Request& req, httplib::ws::WebSocket& ws) {
-    if (!req.has_param("list")) {
-      ws.close(httplib::ws::CloseStatus::InvalidPayload, "Bad request");
-      return;
-    }
-
-    auto list = req.get_param_value("list");
-
-    std::vector<std::string> songs;
-    try {
-      nlohmann::json::parse(list).get_to(songs);
-    } catch(...) {
-      ws.close(httplib::ws::CloseStatus::InvalidPayload, "Malformed request");
-      return;
-    }
-
-    std::atomic<size_t> processed = 0;
-
+  // Download song(s)
+  server.WebSocket("/download", [](const httplib::Request& req, httplib::ws::WebSocket& ws) {
+    log_request(req);
     std::vector<std::future<void>> download_futures;
     download_futures.reserve(MAX_THREAD_COUNT);
 
@@ -246,22 +321,28 @@ int main(int argc, char *argv[]) {
       ), futures.end());
     };
 
+    std::string song;
     size_t index = 0;
-    for (const auto& song : songs) {
+    while (ws.read(song)) {
+      if (song.empty()) // Last message should be empty string
+        break;
+
+      log("Downloading song '" + song + "'.");
+
       while (download_futures.size() >= MAX_THREAD_COUNT) {
         // Remove futures that have finished
         remove_finished_futures(download_futures);
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
       }
 
-      download_futures.emplace_back(std::async(std::launch::async, [&, index](){
-        download_from_search(song, first_id + index, 0, true, true);
-        processed++;
+      download_futures.emplace_back(std::async(std::launch::async, [&, song, index](){
+        auto status = download_from_search(song, first_id + index, 0, true, true);
 
-        ws.send("{ \
-          \"completed\": " + std::to_string(processed) + ", \
-          \"total\": " + std::to_string(songs.size()) + " \
-        }");
+        nlohmann::json json_response;
+        json_response["id"] = first_id + index;
+        json_response["success"] = status;
+
+        ws.send(json_response.dump());
       }));
       index++;
     }
@@ -276,7 +357,8 @@ int main(int argc, char *argv[]) {
   });
 
   // Create playlist
-  server.Get("/create-playlist", [](const httplib::Request& req, httplib::Response& res){
+  server.Get("/playlist/new", [](const httplib::Request& req, httplib::Response& res){
+    log_request(req);
     if (!req.has_param("song_id")) {
       res.status = 400;
       res.set_content("Bad request", "text/plain");
@@ -287,7 +369,7 @@ int main(int argc, char *argv[]) {
     int int_song_id;
     try {
         int_song_id = std::stoi(song_id);
-    } catch (const std::invalid_argument&) {
+    } catch (const std::exception&) {
       res.status = 400;
       res.set_content("Bad request", "text/plain");
       return;
@@ -295,11 +377,12 @@ int main(int argc, char *argv[]) {
 
     std::string name = create_new_playlist(int_song_id);
 
-    res.set_content(name, "plain/text");
+    res.set_content(name, "text/plain");
   });
 
   // Rename playlist
-  server.Get("/rename-playlist", [](const httplib::Request& req, httplib::Response& res){
+  server.Get("/playlist/rename", [](const httplib::Request& req, httplib::Response& res){
+    log_request(req);
     if (!(req.has_param("old_name") && req.has_param("new_name"))) {
       res.status = 400;
       res.set_content("Bad request", "text/plain");
@@ -311,11 +394,12 @@ int main(int argc, char *argv[]) {
 
     std::string name = rename_playlist(old_name, new_name);
 
-    res.set_content(name, "plain/text");
+    res.set_content(name, "text/plain");
   });
 
   // Add song to playlist
-  server.Get("/playlist-add-item", [](const httplib::Request& req, httplib::Response& res){
+  server.Get("/playlist/add", [](const httplib::Request& req, httplib::Response& res){
+    log_request(req);
     if (!(req.has_param("playlist_name") && req.has_param("song_id"))) {
       res.status = 400;
       res.set_content("Bad request", "text/plain");
@@ -327,7 +411,7 @@ int main(int argc, char *argv[]) {
     int int_song_id;
     try {
         int_song_id = std::stoi(song_id);
-    } catch (const std::invalid_argument&) {
+    } catch (const std::exception&) {
       res.status = 400;
       res.set_content("Bad request", "text/plain");
       return;
@@ -335,11 +419,12 @@ int main(int argc, char *argv[]) {
 
     add_to_playlist(playlist_name, int_song_id);
 
-    res.set_content("Ok", "plain/text");
+    res.set_content("Ok", "text/plain");
   });
 
   // Remove song from playlist
-  server.Get("/playlist-remove-item", [](const httplib::Request& req, httplib::Response& res){
+  server.Get("/playlist/remove", [](const httplib::Request& req, httplib::Response& res){
+    log_request(req);
     if (!(req.has_param("playlist_name") && req.has_param("song_id"))) {
       res.status = 400;
       res.set_content("Bad request", "text/plain");
@@ -351,7 +436,7 @@ int main(int argc, char *argv[]) {
     int int_song_id;
     try {
         int_song_id = std::stoi(song_id);
-    } catch (const std::invalid_argument&) {
+    } catch (const std::exception&) {
       res.status = 400;
       res.set_content("Bad request", "text/plain");
       return;
@@ -359,11 +444,12 @@ int main(int argc, char *argv[]) {
 
     remove_from_playlist(playlist_name, int_song_id);
 
-    res.set_content("Ok", "plain/text");
+    res.set_content("Ok", "text/plain");
   });
 
   // Delete song
-  server.Get("/delete-song", [](const httplib::Request& req, httplib::Response& res){
+  server.Get("/song/delete", [](const httplib::Request& req, httplib::Response& res){
+    log_request(req);
     if (!req.has_param("song_id")) {
       res.status = 400;
       res.set_content("Bad request", "text/plain");
@@ -374,7 +460,7 @@ int main(int argc, char *argv[]) {
     int int_song_id;
     try {
         int_song_id = std::stoi(song_id);
-    } catch (const std::invalid_argument&) {
+    } catch (const std::exception&) {
       res.status = 400;
       res.set_content("Bad request", "text/plain");
       return;
@@ -382,11 +468,12 @@ int main(int argc, char *argv[]) {
 
     remove_song(int_song_id);
 
-    res.set_content("Ok", "plain/text");
+    res.set_content("Ok", "text/plain");
   });
 
   // Delete playlist
-  server.Get("/delete-playlist", [](const httplib::Request& req, httplib::Response& res){
+  server.Get("/playlist/delete", [](const httplib::Request& req, httplib::Response& res){
+    log_request(req);
     if (!req.has_param("playlist_name")) {
       res.status = 400;
       res.set_content("Bad request", "text/plain");
@@ -397,26 +484,45 @@ int main(int argc, char *argv[]) {
 
     remove_playlist(playlist_name);
 
-    res.set_content("Ok", "plain/text");
+    res.set_content("Ok", "text/plain");
   });
 
   // Autocomplete search
-  server.Get("/fast-autocomplete", [](const httplib::Request& req, httplib::Response& res){
+  server.Get("/autocomplete/fast", [](const httplib::Request& req, httplib::Response& res){
+    log_request(req);
+    // default output
+    res.set_content("{}", "application/json");
+
     if (!req.has_param("query")) {
       res.status = 400;
-      res.set_content("Bad request", "text/plain");
       return;
     }
 
+    const uint64_t my_gen = ++ac_generation;
+
     auto query = req.get_param_value("query");
 
+    // check if stale
+    if (ac_generation.load() != my_gen) {
+      res.status = 409;
+      return;
+    }
+
     auto mf = get_search_autocomplete(query);
-    mf.wait_for(0);
+    while (!mf.is_done(0)) {
+      // check if stale
+      if (ac_generation.load() != my_gen) {
+        res.status = 409;
+        return;
+      }
+
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
     auto autocomplete_result = mf.get();
 
     if (!autocomplete_result) {
       res.status = 500;
-      res.set_content("Failed to get autocomplete result (empty result).", "text/plain");
+      std::println("Failed to get autocomplete result (empty result).");
       return;
     }
 
@@ -425,22 +531,41 @@ int main(int argc, char *argv[]) {
     res.set_content(json_response.dump(), "application/json");
   });
 
-  server.Get("/slow-autocomplete", [](const httplib::Request& req, httplib::Response& res){
+  server.Get("/autocomplete/slow", [](const httplib::Request& req, httplib::Response& res){
+    log_request(req);
+    // default output
+    res.set_content("{}", "application/json");
+
     if (!req.has_param("query")) {
       res.status = 400;
-      res.set_content("Bad request", "text/plain");
       return;
     }
 
+    const uint64_t my_gen = ++ac_generation;
+
     auto query = req.get_param_value("query");
 
+    // check if stale
+    if (ac_generation.load() != my_gen) {
+      res.status = 409;
+      return;
+    }
+
     auto mf = get_search_autocomplete(query);
-    mf.wait();
+    while (!mf.is_done()) {
+      // check if stale
+      if (ac_generation.load() != my_gen) {
+        res.status = 409;
+        return;
+      }
+
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
     auto autocomplete_result = mf.get();
 
     if (!autocomplete_result) {
       res.status = 500;
-      res.set_content("Failed to get autocomplete result (empty result).", "text/plain");
+      log("Failed to get autocomplete result (empty result).", ERROR);
       return;
     }
 
@@ -450,25 +575,27 @@ int main(int argc, char *argv[]) {
   });
 
   // Update yt-dlp
-  server.Get("/update-yt-dlp", [](const httplib::Request&, httplib::Response& res){
+  server.Get("/update", [](const httplib::Request& req, httplib::Response& res){
+    log_request(req);
     if (yt_dlp_path.empty()) {
       res.status = 500;
-      res.set_content("YtDlp doesn't exist on the system.", "text/plain");
+      log("YtDlp doesn't exist on the system.", ERROR);
       return;
     }
 
     std::string command = yt_dlp_path + " -U";
-    
+
     if (!system(command.c_str()) == 0) {
       res.status = 500;
-      res.set_content("YtDlp update command failed ('" + command + "').", "text/plain");
+      log("YtDlp update command failed ('" + command + "').", ERROR);
+      res.set_content("Failed", "text/plain");
       return;
     }
 
     res.set_content("Ok", "text/plain");
   });
 
-  std::println("[INFO] Web server running on {}:{}", host, port);
+  log("Web server running on " + host + ":" + std::to_string(port));
 
   server.listen(host, port);
 

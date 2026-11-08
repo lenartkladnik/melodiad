@@ -7,7 +7,6 @@
 #include <thread>
 #include <unordered_map>
 #include <algorithm>
-#include <random>
 #include <chrono>
 #include <future>
 
@@ -27,9 +26,7 @@ extern const size_t _total_download_progress_step_count; // Should store the num
 extern bool download_lock;
 extern std::string download_status;
 extern size_t _download_progress_step;
-
-extern std::random_device rd;
-extern std::mt19937 rand_generator;
+extern std::atomic<uint64_t> ac_generation;
 
 struct AutocompleteResult {
   std::string query;

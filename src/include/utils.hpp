@@ -6,6 +6,14 @@
 #include <chrono>
 #include <print>
 
+// Disable warnings produced by external libs
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+
+#include "../../external/lib/httplib.h"
+
+#pragma GCC diagnostic pop // Enable all warnings
+
 #include "../../external/lib/BS_thread_pool.hpp"
 
 template<typename TIterable>
@@ -18,8 +26,15 @@ void debug_print_iterable(TIterable& iterable, std::string sep = ", ") {
   std::println("{}", "}");
 }
 
+enum LogType {
+  INFO,
+  WARN,
+  ERROR,
+  REQUEST,
+};
 
-void new_random();
+void log(const std::string msg, const LogType type = INFO);
+void log_request(const httplib::Request& req);
 std::string exec(const char* cmd);
 bool resize_image(std::string path, std::string output, sf::Vector2u target_size);
 bool is_string_valid_name(const std::string& s);
@@ -131,5 +146,24 @@ class MultistateFuture {
 
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
       }
+    }
+
+    bool is_done(int desire = -1) {
+      // -1 desire means wait for all to finish
+      int i = 0;
+      for (const auto& future : futures) {
+        if (desire < 0 && !is_future_ready(future))
+          return false;
+
+        if (is_future_ready(future) && (int)desires[i] >= desire)
+          return true;
+
+        i++;
+      }
+
+      if (desire < 0)
+        return true;
+
+      return false;
     }
 };

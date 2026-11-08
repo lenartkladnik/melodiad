@@ -5,7 +5,6 @@
 #include <iostream>
 #include <fstream>
 #include <filesystem>
-#include <random>
 #include <cctype>
 #include <cstdio>
 #include <memory>
@@ -34,6 +33,4 @@ const size_t _total_download_progress_step_count = 5;
 bool download_lock = false;
 std::string download_status;
 size_t _download_progress_step = 0;
-
-std::random_device rd;
-std::mt19937 rand_generator(rd());
+std::atomic<uint64_t> ac_generation{0};

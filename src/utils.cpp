@@ -30,8 +30,54 @@
   #define PCLOSE pclose
 #endif
 
-void new_random() {
-  rand_generator.seed(rd());
+void log(const std::string msg, const LogType type) {
+  std::string log_string = "";
+
+  switch (type) {
+    case INFO:
+      log_string += "info";
+      break;
+    case WARN:
+      log_string += "warning";
+      break;
+    case ERROR:
+      log_string += "error";
+      break;
+    case REQUEST:
+      log_string += "request";
+    default:
+      break;
+  }
+
+  log_string += " [";
+
+  std::time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+  std::tm tm{};
+  #ifdef _WIN32
+    localtime_s(&tm, &now);
+  #else
+    localtime_r(&now, &tm);
+  #endif
+  char time_buf[64];
+  std::strftime(time_buf, sizeof(time_buf), "%d/%b/%Y:%H:%M:%S %z", &tm);
+
+  log_string += time_buf;
+
+  log_string += "] ";
+  log_string += msg;
+
+  std::println("{}", log_string);
+}
+
+void log_request(const httplib::Request& req) {
+  log(req.method + req.path + " from " + req.remote_addr + ":" + std::to_string(req.remote_port), REQUEST);
+
+  auto user_agent = req.get_header_value("User-Agent");
+  if (!user_agent.empty())
+    log("  User-Agent: " + user_agent, REQUEST);
+
+  for (const auto& [key, value] : req.params)
+    log("  param " + key + " = '" + value + "'", REQUEST);
 }
 
 // Source - https://stackoverflow.com/a/478960
@@ -351,11 +397,11 @@ std::string url_encode(const std::string &value) {
 }
 
 void cleanup() {
-  std::println("[INFO] Exiting...");
+  log("Exiting...");
   try {
     // Wait for any ongoing tasks to finish
     multistate_future_pool.wait();
   } catch (...) {
-    std::println("[WARN] Force exiting.");
+    log("Force exiting.", WARN);
   }
 }
