@@ -242,6 +242,32 @@ int main(int argc, char *argv[]) {
     res.set_content(json_response.dump(), "application/json");
   });
 
+  // Get playlist size
+  server.Get("/playlist/size", [](const httplib::Request& req, httplib::Response& res) {
+    log_request(req);
+    // default output
+    res.set_content("{}", "application/json");
+
+    if (!req.has_param("playlist_name")) {
+      res.status = 400;
+      return;
+    }
+
+    auto playlist_name = req.get_param_value("playlist_name");
+
+    if (!exists_playlist(playlist_name)) {
+      res.status = 400;
+      log("Requested playlist doesn't exist.", ERROR);
+      return;
+    }
+
+    nlohmann::json json_response;
+    json_response["size"] = get_playlist(playlist_name).size();
+
+    res.set_content(json_response.dump(), "application/json");
+  });
+
+
   // Get playlist items
   server.Get("/playlist/items", [](const httplib::Request& req, httplib::Response& res) {
     log_request(req);

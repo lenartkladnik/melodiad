@@ -148,6 +148,30 @@ Fetch metadata for a playlist.
 
 ---
 
+### `GET /playlist/size`
+
+Fetch size for a playlist.
+
+**Query Parameters**
+
+|Name|Type|Required|Description|
+|-|-|-|-|
+|`playlist_name`|string|Yes|Name of the playlist.|
+
+**Responses**
+
+- `200 OK` - `application/json`:
+
+  ```json
+  {
+    "size": 42,
+  }
+  ```
+
+- `400 Bad Request` - missing `playlist_name` or the playlist doesn't exist.
+
+---
+
 ### `GET /playlist/items`
 
 Fetch items for a playlist.
