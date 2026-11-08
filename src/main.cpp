@@ -1,3 +1,13 @@
+/*
+* main.cpp
+*
+* Copyright (C) 2026  Lenart Kladnik
+* You may use, distribute and modify this code under the terms of the GPL license,
+* see LICENSE file.
+*
+* version 1.0.0, 8 Nov 2026
+*/
+
 #include <print>
 #include <string>
 #include <vector>
@@ -33,12 +43,20 @@ void help() {
   std::println("melodiad is a music server backend with an API built on top of httplib that");
   std::println("supports searching, downloading (via yt-dlp), and managing songs and playlists");
   std::println("");
-  std::println("For documentation on the API please refer to API.md (in the git repository).");
+  std::println("For documentation on the API please refer to API.md (in the root of the git repository).");
   std::println("");
   std::println("Options:");
   std::println("  -h, --help  Shows this screen");
   std::println("  -P, --port  Port the API is listening on (default is 5400)");
   std::println("  -H, --host  Host the API is listening on (default is 0.0.0.0)");
+}
+
+void start_message() {
+  std::println("melodiad  Copyright (C) 2026  Lenart Kladnik");
+  std::println("This program comes with ABSOLUTELY NO WARRANTY.");
+  std::println("This is free software, and you are welcome to redistribute it");
+  std::println("under certain conditions.");
+  std::println("");
 }
 
 int main(int argc, char *argv[]) {
@@ -93,6 +111,8 @@ int main(int argc, char *argv[]) {
       return 1;
     }
   }
+
+  start_message();
 
   log("Setting up environment...");
 

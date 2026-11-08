@@ -1,3 +1,13 @@
+/*
+* download.hpp
+*
+* Copyright (C) 2026  Lenart Kladnik
+* You may use, distribute and modify this code under the terms of the GPL license,
+* see LICENSE file.
+*
+* For version information, see main.cpp
+*/
+
 #pragma once
 
 #include "data.hpp"
