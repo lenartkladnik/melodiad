@@ -162,6 +162,11 @@ int main(int argc, char *argv[]) {
 
     auto song_id = req.get_param_value("song_id");
 
+    if (song_id == "-1") { // Default "null" song id
+      res.status = 404;
+      return;
+    }
+
     int int_song_id;
     try {
         int_song_id = std::stoi(song_id);
@@ -286,6 +291,7 @@ int main(int argc, char *argv[]) {
       }
       shuffle = req.get_param_value("shuffle") == "true";
     }
+    bool loop = req.get_param_value("loop") == "true";
     auto playlist_name = req.get_param_value("playlist_name");
     int index;
     try {
@@ -312,6 +318,11 @@ int main(int argc, char *argv[]) {
     }
 
     int next_song = songs[index % songs.size()];
+    if (!loop) {
+      if (index >= (int)songs.size()) {
+        next_song = -1;
+      }
+    }
 
     nlohmann::json json_response;
     json_response["song_id"] = next_song;

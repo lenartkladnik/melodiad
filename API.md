@@ -185,8 +185,9 @@ Get the song at a given index of a playlist. The index wraps around (`index % pl
 |-|-|-|-|
 |`playlist_name`|string|Yes|Name of the playlist.|
 |`index`|integer|Yes|Non-negative position in the playlist.|
-|`shuffle`|string|No|Shuffles the playlist when set to `true`. If this parameter is present, `seed` is required.|
+|`shuffle`|bool|No|Shuffles the playlist when set to `true`. If this parameter is present, `seed` is required.|
 |`seed`|integer|With `shuffle`|Seed for the shuffle.|
+|`loop`|bool|Yes|Loops the playlist when set to `true`. If it is set to `false`, `-1` is returned if a song past the end of the playlist is requested.|
 
 **Responses**
 
