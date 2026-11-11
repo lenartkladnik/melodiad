@@ -139,7 +139,7 @@ int main(int argc, char *argv[]) {
   httplib::Server server;
   server.new_task_queue = []{return new httplib::ThreadPool(32);};
 
-  server.set_mount_point("/data", base_music_path);
+  server.set_mount_point("/api/data", base_music_path);
 
   server.Get("/api/status", [](const httplib::Request& req, httplib::Response& res) {
     log_request(req);
