@@ -11,14 +11,13 @@
 #include <string>
 #include <cctype>
 #include <print>
+#include <filesystem>
 
 #include "include/data.hpp"
 #include "include/storage_handler.hpp"
 
-#ifndef _WIN32
-  #define STB_IMAGE_IMPLEMENTATION
-  #define STB_IMAGE_WRITE_IMPLEMENTATION
-#endif
+#define STB_IMAGE_IMPLEMENTATION
+#define STB_IMAGE_WRITE_IMPLEMENTATION
 #define STB_IMAGE_RESIZE_IMPLEMENTATION
 
 // Disable warnings produced by external libs
@@ -112,7 +111,7 @@ std::string exec(const char* cmd) {
 
 struct StbiFree { void operator()(unsigned char* p) const { stbi_image_free(p); } };
 
-bool resize_image(std::string path, std::string output, sf::Vector2u target_size) {
+bool resize_image(std::string path, std::string output, size_t target_size_x, size_t target_size_y) {
   int w, h, channels;
   std::unique_ptr<unsigned char, StbiFree> data(
       stbi_load(path.c_str(), &w, &h, &channels, 0));
@@ -130,15 +129,15 @@ bool resize_image(std::string path, std::string output, sf::Vector2u target_size
       throw std::runtime_error("Unsupported channel count for cover art image.");
   }
 
-  std::vector<unsigned char> resized(target_size.x * target_size.y * channels);
+  std::vector<unsigned char> resized(target_size_x * target_size_y * channels);
 
   stbir_resize(
     data.get(), w, h, 0,
-    resized.data(), target_size.x, target_size.y, 0,
+    resized.data(), target_size_x, target_size_y, 0,
     layout, STBIR_TYPE_UINT8, STBIR_EDGE_CLAMP, STBIR_FILTER_DEFAULT);
 
-  if (!stbi_write_png(output.c_str(), target_size.x, target_size.y, channels,
-                      resized.data(), target_size.x * channels))
+  if (!stbi_write_png(output.c_str(), target_size_x, target_size_y, channels,
+                      resized.data(), target_size_x * channels))
     throw std::runtime_error("Failed to write resized image.");
 
   return true;

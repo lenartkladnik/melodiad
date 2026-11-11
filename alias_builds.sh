@@ -20,23 +20,20 @@ function build_debug() {
   build_debug_l1
 }
 
-function build_all_archive() {
-  v=$1
-  if [[ -z $v ]]; then
-    v="latest"
-  fi
+function build_linux() {
+  _build_template "linux-release"
 }
 
-function build_all_no_archive() {
-  v=$1
-  if [[ -z $v ]]; then
-    v="latest"
-  fi
+function build_windows() {
+  _build_template "windows-release"
+}
+
+function build_macos() {
+  _build_template "macos-release"
 }
 
 function build_all() {
-  v=$1
-  if [[ -z $v ]]; then
-    v="latest"
-  fi
+  _build_template "linux-release"
+  _build_template "windows-release"
+  _build_template "macos-release"
 }

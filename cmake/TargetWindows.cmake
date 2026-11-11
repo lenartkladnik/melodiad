@@ -12,6 +12,13 @@ set(MINGW_BASE_CMAKE_ARGS
   -DBUILD_TESTING=OFF
 )
 
+target_link_libraries(${PROJECT_DISPLAY_NAME} PRIVATE
+    ssl crypto
+    stdc++exp
+    ws2_32 crypt32 bcrypt iphlpapi
+)
+target_link_options(${PROJECT_DISPLAY_NAME} PRIVATE -static -static-libgcc -static-libstdc++)
+
 target_compile_options(${PROJECT_DISPLAY_NAME} PRIVATE -fpermissive)
 
 set_target_properties(${PROJECT_DISPLAY_NAME} PROPERTIES

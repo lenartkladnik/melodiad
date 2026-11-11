@@ -47,6 +47,7 @@ void help() {
   std::println("");
   std::println("Options:");
   std::println("  -h, --help  Shows this screen");
+  std::println("  -p, --path  Path where the songs and related data are stored");
   std::println("  -P, --port  Port the API is listening on (default is 5400)");
   std::println("  -H, --host  Host the API is listening on (default is 0.0.0.0)");
 }
@@ -62,6 +63,7 @@ void start_message() {
 int main(int argc, char *argv[]) {
   std::string host = "0.0.0.0";
   int port = 5400;
+  std::string path = "./";
 
   auto is_args = [](const std::vector<std::string>& v, char* s) -> bool {
     for (const auto& e : v) { if (e.compare(s) == 0) return true; }
@@ -106,6 +108,17 @@ int main(int argc, char *argv[]) {
       }
     }
 
+    else if (is_args({"-p", "--path"}, argv[i])) {
+      if (i + 1 < argc) {
+        path = argv[i + 1];
+
+        i++;
+      } else {
+        log("Missing value for argument path.", ERROR);
+        return 1;
+      }
+    }
+
     else {
       log("Unknown argument '" + std::string(argv[i]) + "', try --help to see the list of arguments.", ERROR);
       return 1;
@@ -116,8 +129,10 @@ int main(int argc, char *argv[]) {
 
   log("Setting up environment...");
 
-  if (!ensure_storage())
+  if (!ensure_storage(path)) {
+    log("Failed to initialize storage at '" + path + "'.", ERROR);
     return 1;
+  }
 
   yt_dlp_path = find_yt_dlp(); // find yt-dlp on PATH and download if isn't found
 
@@ -126,13 +141,13 @@ int main(int argc, char *argv[]) {
 
   server.set_mount_point("/data", base_music_path);
 
-  server.Get("/", [](const httplib::Request& req, httplib::Response& res) {
+  server.Get("/api/status", [](const httplib::Request& req, httplib::Response& res) {
     log_request(req);
-    res.set_content("Server running Melodia", "text/plain");
+    res.set_content("Running.", "text/plain");
   });
 
   // Get search results
-  server.Get("/search", [](const httplib::Request& req, httplib::Response& res){
+  server.Get("/api/search", [](const httplib::Request& req, httplib::Response& res){
     log_request(req);
     // default output
     res.set_content("{}", "application/json");
@@ -150,7 +165,7 @@ int main(int argc, char *argv[]) {
   });
 
   // Get song
-  server.Get("/song", [](const httplib::Request& req, httplib::Response& res) {
+  server.Get("/api/song", [](const httplib::Request& req, httplib::Response& res) {
     log_request(req);
     // default output
     res.set_content("{}", "application/json");
@@ -193,7 +208,7 @@ int main(int argc, char *argv[]) {
   });
 
   // Get song audio
-  server.Get("/song/stream", [](const httplib::Request& req, httplib::Response& res) {
+  server.Get("/api/song/stream", [](const httplib::Request& req, httplib::Response& res) {
     log_request(req);
     // default output
     res.set_content("", "audio/mpeg");
@@ -218,7 +233,7 @@ int main(int argc, char *argv[]) {
   });
 
   // Get playlist
-  server.Get("/playlist", [](const httplib::Request& req, httplib::Response& res) {
+  server.Get("/api/playlist", [](const httplib::Request& req, httplib::Response& res) {
     log_request(req);
     // default output
     res.set_content("{}", "application/json");
@@ -243,7 +258,7 @@ int main(int argc, char *argv[]) {
   });
 
   // Get playlist size
-  server.Get("/playlist/size", [](const httplib::Request& req, httplib::Response& res) {
+  server.Get("/api/playlist/size", [](const httplib::Request& req, httplib::Response& res) {
     log_request(req);
     // default output
     res.set_content("{}", "application/json");
@@ -269,7 +284,7 @@ int main(int argc, char *argv[]) {
 
 
   // Get playlist items
-  server.Get("/playlist/items", [](const httplib::Request& req, httplib::Response& res) {
+  server.Get("/api/playlist/items", [](const httplib::Request& req, httplib::Response& res) {
     log_request(req);
     res.set_content("{}", "application/json");
 
@@ -293,7 +308,7 @@ int main(int argc, char *argv[]) {
   });
 
   // Get song for index in playlist
-  server.Get("/playlist/next", [](const httplib::Request& req, httplib::Response& res) {
+  server.Get("/api/playlist/next", [](const httplib::Request& req, httplib::Response& res) {
     log_request(req);
     res.set_content("{}", "application/json");
 
@@ -357,7 +372,7 @@ int main(int argc, char *argv[]) {
   });
 
   // Get all playlists
-  server.Get("/playlists", [](const httplib::Request& req, httplib::Response& res) {
+  server.Get("/api/playlists", [](const httplib::Request& req, httplib::Response& res) {
     log_request(req);
     nlohmann::json json_response = get_all_playlists();
 
@@ -365,7 +380,7 @@ int main(int argc, char *argv[]) {
   });
 
   // Download song(s)
-  server.WebSocket("/download", [](const httplib::Request& req, httplib::ws::WebSocket& ws) {
+  server.WebSocket("/api/download", [](const httplib::Request& req, httplib::ws::WebSocket& ws) {
     log_request(req);
     std::vector<std::future<void>> download_futures;
     download_futures.reserve(MAX_THREAD_COUNT);
@@ -414,7 +429,7 @@ int main(int argc, char *argv[]) {
   });
 
   // Create playlist
-  server.Get("/playlist/new", [](const httplib::Request& req, httplib::Response& res){
+  server.Get("/api/playlist/new", [](const httplib::Request& req, httplib::Response& res){
     log_request(req);
     if (!req.has_param("song_id")) {
       res.status = 400;
@@ -438,7 +453,7 @@ int main(int argc, char *argv[]) {
   });
 
   // Rename playlist
-  server.Get("/playlist/rename", [](const httplib::Request& req, httplib::Response& res){
+  server.Get("/api/playlist/rename", [](const httplib::Request& req, httplib::Response& res){
     log_request(req);
     if (!(req.has_param("old_name") && req.has_param("new_name"))) {
       res.status = 400;
@@ -455,7 +470,7 @@ int main(int argc, char *argv[]) {
   });
 
   // Add song to playlist
-  server.Get("/playlist/add", [](const httplib::Request& req, httplib::Response& res){
+  server.Get("/api/playlist/add", [](const httplib::Request& req, httplib::Response& res){
     log_request(req);
     if (!(req.has_param("playlist_name") && req.has_param("song_id"))) {
       res.status = 400;
@@ -480,7 +495,7 @@ int main(int argc, char *argv[]) {
   });
 
   // Remove song from playlist
-  server.Get("/playlist/remove", [](const httplib::Request& req, httplib::Response& res){
+  server.Get("/api/playlist/remove", [](const httplib::Request& req, httplib::Response& res){
     log_request(req);
     if (!(req.has_param("playlist_name") && req.has_param("song_id"))) {
       res.status = 400;
@@ -505,7 +520,7 @@ int main(int argc, char *argv[]) {
   });
 
   // Delete song
-  server.Get("/song/delete", [](const httplib::Request& req, httplib::Response& res){
+  server.Get("/api/song/delete", [](const httplib::Request& req, httplib::Response& res){
     log_request(req);
     if (!req.has_param("song_id")) {
       res.status = 400;
@@ -529,7 +544,7 @@ int main(int argc, char *argv[]) {
   });
 
   // Delete playlist
-  server.Get("/playlist/delete", [](const httplib::Request& req, httplib::Response& res){
+  server.Get("/api/playlist/delete", [](const httplib::Request& req, httplib::Response& res){
     log_request(req);
     if (!req.has_param("playlist_name")) {
       res.status = 400;
@@ -545,7 +560,7 @@ int main(int argc, char *argv[]) {
   });
 
   // Autocomplete search
-  server.Get("/autocomplete/fast", [](const httplib::Request& req, httplib::Response& res){
+  server.Get("/api/autocomplete/fast", [](const httplib::Request& req, httplib::Response& res){
     log_request(req);
     // default output
     res.set_content("{}", "application/json");
@@ -588,7 +603,7 @@ int main(int argc, char *argv[]) {
     res.set_content(json_response.dump(), "application/json");
   });
 
-  server.Get("/autocomplete/slow", [](const httplib::Request& req, httplib::Response& res){
+  server.Get("/api/autocomplete/slow", [](const httplib::Request& req, httplib::Response& res){
     log_request(req);
     // default output
     res.set_content("{}", "application/json");
@@ -632,7 +647,7 @@ int main(int argc, char *argv[]) {
   });
 
   // Update yt-dlp
-  server.Get("/update", [](const httplib::Request& req, httplib::Response& res){
+  server.Get("/api/update", [](const httplib::Request& req, httplib::Response& res){
     log_request(req);
     if (yt_dlp_path.empty()) {
       res.status = 500;
@@ -642,7 +657,7 @@ int main(int argc, char *argv[]) {
 
     std::string command = yt_dlp_path + " -U";
 
-    if (!system(command.c_str()) == 0) {
+    if (system(command.c_str()) != 0) {
       res.status = 500;
       log("YtDlp update command failed ('" + command + "').", ERROR);
       res.set_content("Failed", "text/plain");

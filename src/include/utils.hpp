@@ -10,7 +10,6 @@
 
 #pragma once
 
-#include <SFML/Graphics.hpp>
 #include <string>
 #include <future>
 #include <chrono>
@@ -36,6 +35,10 @@ void debug_print_iterable(TIterable& iterable, std::string sep = ", ") {
   std::println("{}", "}");
 }
 
+#ifdef ERROR // httplib.h defines ERROR
+#undef ERROR
+#endif
+
 enum LogType {
   INFO,
   WARN,
@@ -46,7 +49,7 @@ enum LogType {
 void log(const std::string msg, const LogType type = INFO);
 void log_request(const httplib::Request& req);
 std::string exec(const char* cmd);
-bool resize_image(std::string path, std::string output, sf::Vector2u target_size);
+bool resize_image(std::string path, std::string output, size_t target_size_x, size_t target_size_y);
 bool is_string_valid_name(const std::string& s);
 void mkdir(std::string path);
 bool must_exist(std::string path);

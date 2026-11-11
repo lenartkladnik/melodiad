@@ -10,15 +10,15 @@
 
 #pragma once
 
-extern const std::string base_path;
-extern const std::string base_path_external;
-extern const std::string base_path_external_prog;
-extern const std::string base_music_path;
-extern const std::string base_music_path_songs;
-extern const std::string base_music_path_playlists;
+extern std::string base_path;
+extern std::string base_path_external;
+extern std::string base_path_external_prog;
+extern std::string base_music_path;
+extern std::string base_music_path_songs;
+extern std::string base_music_path_playlists;
 extern const std::string path_counter_prefix;
 
-bool ensure_storage();
+bool ensure_storage(std::string new_base_path = "./");
 void remove_playlist(std::string playlist);
 void remove_song(int id);
 size_t get_next_available_song_id();

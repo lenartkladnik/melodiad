@@ -18,15 +18,27 @@
 #include "include/utils.hpp"
 #include "include/storage_handler.hpp"
 
-extern const std::string base_path = "./";
-extern const std::string base_path_external = base_path + "external/";
-extern const std::string base_path_external_prog = base_path_external + "prog/";
-extern const std::string base_music_path = ".music_data/";
-extern const std::string base_music_path_songs = base_music_path + "songs/";
-extern const std::string base_music_path_playlists = base_music_path + "playlists/";
+std::string base_path;
+std::string base_path_external;
+std::string base_path_external_prog;
+std::string base_music_path;
+std::string base_music_path_songs;
+std::string base_music_path_playlists;
 extern const std::string path_counter_prefix = " #";
 
-bool ensure_storage() {
+bool ensure_storage(std::string new_base_path) {
+  base_path = new_base_path;
+
+  if (!(base_path.back() == '/')) {
+    base_path += '/';
+  }
+
+  // base_path_external = base_path + "external/";
+  // base_path_external_prog = base_path_external + "prog/";
+  base_music_path = base_path + ".music_data/";
+  base_music_path_songs = base_music_path + "songs/";
+  base_music_path_playlists = base_music_path + "playlists/";
+
   try {
     if (!(must_exist(base_path)))
       return false;
@@ -34,8 +46,8 @@ bool ensure_storage() {
     mkdir(base_music_path);
     mkdir(base_music_path_songs);
     mkdir(base_music_path_playlists);
-    mkdir(base_path_external);
-    mkdir(base_path_external_prog);
+    // mkdir(base_path_external);
+    // mkdir(base_path_external_prog);
   } catch (const std::filesystem::filesystem_error& err) {
     throw std::runtime_error("Failed to check and create necessary directories '" + std::string(err.what()) + "'.");
   }

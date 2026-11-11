@@ -18,10 +18,8 @@
 #include "include/storage_handler.hpp"
 #include "include/utils.hpp"
 
-#ifndef _WIN32
-  #define STB_IMAGE_IMPLEMENTATION
-  #define STB_IMAGE_WRITE_IMPLEMENTATION
-#endif
+#define STB_IMAGE_IMPLEMENTATION
+#define STB_IMAGE_WRITE_IMPLEMENTATION
 #define STB_IMAGE_RESIZE_IMPLEMENTATION
 
 // Disable warnings produced by external libs
@@ -228,7 +226,7 @@ inline std::string get_yt_dlp_downloaded_path() {
 bool _resize_cover_art(const std::string& temp_file_path, const std::string& output, int target_w, int target_h) {
   set_download_status("Resizing cover art");
  
-  if (!resize_image(temp_file_path, output, {(unsigned)target_w, (unsigned)target_h})) {
+  if (!resize_image(temp_file_path, output, (unsigned)target_w, (unsigned)target_h)) {
     return false;
   }
  
@@ -297,13 +295,13 @@ std::string find_yt_dlp() {
 
   std::string yt_dlp_path = "yt-dlp";
   if (!std::filesystem::exists(get_yt_dlp_downloaded_path()) &&
-      !std::system("yt-dlp --version >"
+      std::system("yt-dlp --version >"
     #ifdef _WIN32
       "nul 2>nul"
     #else
       "/dev/null 2>&1"
     #endif
-    ) == 0) {
+    ) != 0) {
     log("YtDlp was not found on the system and will be downloaded");
 
     yt_dlp_path = get_yt_dlp_downloaded_path();
